@@ -24,8 +24,8 @@ import sys
 import os
 import plotly.express as px
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from MFE.dmasif_encoder.protein_surface_encoder import dMaSIF
-from MFE.dmasif_encoder.data_iteration import iterate_Surf
+from dMasif.dmasif_encoder.protein_surface_encoder import dMaSIF
+from dMasif.dmasif_encoder.data_iteration import iterate_Surf
 from .protein_decoder import *
 
 class MLPDecoder(nn.Module):

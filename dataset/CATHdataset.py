@@ -14,7 +14,7 @@ from torch_geometric.data import InMemoryDataset
 from sklearn.preprocessing import LabelEncoder
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from MFE.dmasif_encoder.data_iteration import Generate_Surface
-#from MFE.dmasif_encoder.geometry_processing import curvatures, assign_curvature_to_alphaC
+#from dMasif.dmasif_encoder.geometry_processing import curvatures, assign_curvature_to_alphaC
 #from showCloud import visualize_protein_surface
 from sklearn.neighbors import NearestNeighbors
 #import cpp_wrappers.cpp_neighbors.radius_neighbors as cpp_neighbors
