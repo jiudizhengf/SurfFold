@@ -37,48 +37,16 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 
-def calc_identity(aln_seq1: str, aln_seq2: str) -> float:
-    """
-    计算对齐序列的 Percent Identity。
-    matches / alignment_length × 100
-    只在两侧都不是 '-' 时才计为匹配。
-    """
-    matches = sum(a == b for a, b in zip(aln_seq1, aln_seq2)
-                  if a != '-' and b != '-')
-    return matches / len(aln_seq1) * 100
-
-def seq_similarity(seq1: str, seq2: str):
-    """
-    对两条序列计算并打印全局和局部比对的 % Identity 及对齐示例。
-    """
-    # 全局比对（Needleman–Wunsch, match=1, mismatch=0）
-    aln_g = pairwise2.align.globalxx(seq1, seq2, one_alignment_only=True)[0]
-    id_g = calc_identity(aln_g.seqA, aln_g.seqB)
-
-    # 局部比对（Smith–Waterman, match=1, mismatch=0）
-    aln_l = pairwise2.align.localxx(seq1, seq2, one_alignment_only=True)[0]
-    id_l = calc_identity(aln_l.seqA, aln_l.seqB)
-    return id_g, id_l
-
 def train(args, model, loader, optimizer, device):
     model.train()
     loss_accum = 0
     preds = []
     functions = []
-    #wrongs = ['2pbz.A', '1j77.A', '2m47.A', '4hg2.A']
     pbar = tqdm(loader, disable=args.disable_tqdm)
     for step, batch in enumerate(pbar):
-        #print(batch.id)
-        #if any(wrong in batch.id for wrong in wrongs):
-            #print('wrong')
-            #continue
-        # if any(wrong in batch.id for wrong in wrongs2):
-        #     print('wrong2')
         batch = batch.to(device) 
         pred = model(batch)
-        # preds.append(torch.argmax(pred, dim=1))
         function = batch.y.long()
-        # functions.append(function)
         optimizer.zero_grad()
         loss = criterion(pred, function)
         loss.backward()
@@ -87,12 +55,8 @@ def train(args, model, loader, optimizer, device):
         print("train_loss = {:.4f}".format(loss.item()))
         loss_accum += loss.item()
 
-    # functions = torch.cat(functions, dim=0)
-    # preds = torch.cat(preds, dim=0)
-    # acc = torch.sum(preds == functions) / functions.shape[0]
     train_loss = loss_accum / (step + 1)
     train_perplexity = np.exp(train_loss)
-    # print(wrongs)
     return train_loss, train_perplexity
 
 
@@ -104,7 +68,6 @@ def evaluation(args, model, loader, device):
     pbar = tqdm(loader, disable=args.disable_tqdm)
     for step, batch in enumerate(pbar):
         batch = batch.to(device)
-        # pred = model(batch)
         try:    
             pred = model(batch)
         except RuntimeError as e:
@@ -123,14 +86,9 @@ def evaluation(args, model, loader, device):
         pbar.set_description('val loss: {:.4f}'.format(loss.item()))
         print("val_loss = {:.4f}".format(loss.item()))
         loss_accum += loss.item()
-
-    # functions = torch.cat(functions, dim=0)
-    # preds = torch.cat(preds, dim=0)
-    # acc = torch.sum(preds == functions) / functions.shape[0]
     val_loss = loss_accum / (step + 1)
     val_perplexity = np.exp(val_loss)
     return val_loss, val_perplexity
-    #return loss_accum / (step + 1), acc.item()
 
 def Test(args, model, loader, device,task='all'):
     model.eval()
@@ -141,7 +99,6 @@ def Test(args, model, loader, device,task='all'):
     pbar = tqdm(loader, disable=args.disable_tqdm)
     for step, batch in enumerate(pbar):
         batch = batch.to(device)
-        # pred = model(batch)
         try:    
             pred = model(batch)
         except RuntimeError as e:
@@ -166,14 +123,11 @@ def Test(args, model, loader, device,task='all'):
         print("test_recovery = {:.4f}".format(recovery_.item()))
         total_recovery += recovery_
 
-    # functions = torch.cat(functions, dim=0)
-    # preds = torch.cat(preds, dim=0)
-    # acc = torch.sum(preds == functions) / functions.shape[0]
     test_loss = loss_accum / (step + 1)
     test_perplexity = np.exp(test_loss)
     test_recovery = total_recovery / (step + 1)
     return test_loss, test_perplexity, test_recovery
-    #return loss_accum / (step + 1), acc.item()
+
 
 def extract_embeddings(model, loader, device):
     """提取模型中间层嵌入特征"""
@@ -216,16 +170,6 @@ def visualize_tsne(embeddings_dict,label ,perplexity=30, n_iter=1000, save_prefi
             'label': [feature_name] * embedding_matrix.shape[0]
         })
         
-        # # 绘制t-SNE结果
-        # plt.figure(figsize=(12, 10))
-        # sns.scatterplot(x='x', y='y', data=df, palette='viridis', alpha=0.7, s=50)
-        # plt.title(f't-SNE Visualization of {feature_name}')
-        # plt.xlabel('t-SNE dimension 1')
-        # plt.ylabel('t-SNE dimension 2')
-        # save_path = f"{save_prefix}_{feature_name}.png"
-        # plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        # plt.show()
-        # print(f"t-SNE visualization for '{feature_name}' saved to {save_path}")
          # 使用 JointGrid 绘制散点图与边缘分布曲线
         g = sns.JointGrid(data=df, x='x', y='y', space=0, height=12)
         g.plot_joint(sns.scatterplot, color='b', alpha=0.7, s=50)
@@ -286,7 +230,7 @@ def main():
     parser.add_argument('--save_dir', type=str, default='/trained_models_CATH4.2/allatom', help='Trained model path')
     parser.add_argument('--test_visualization',default=False)
     parser.add_argument('--disable_tqdm', default=False, action='store_true')
-    parser.add_argument('--visualize_path', type=str, default='/home/ldr/ProNet_surf/trained_models_CATH4.2/allatom/visualization/best_val.pt', help='Trained model path')
+    parser.add_argument('--visualize_path', type=str, help='Trained model path')
     args = parser.parse_args()
     print(args)
 
@@ -338,7 +282,6 @@ def main():
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        #embeddings = extract_embeddings(model, test_loader_all, device)
 
         model.eval()
         with open('sampled_1000_pairs_gaussian_uniform copy.txt', 'r') as f:
