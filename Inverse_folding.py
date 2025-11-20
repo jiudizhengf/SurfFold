@@ -128,65 +128,6 @@ def Test(args, model, loader, device,task='all'):
     test_recovery = total_recovery / (step + 1)
     return test_loss, test_perplexity, test_recovery
 
-
-def extract_embeddings(model, loader, device):
-    """提取模型中间层嵌入特征"""
-    model.eval()
-    pbar = tqdm(loader)
-    with torch.no_grad():
-        for step, batch in enumerate(pbar):
-            batch = batch.to(device)
-            try:
-                if batch.seq.shape[0] >300:    
-                    # 获取模型中间层嵌入
-                    embedding = model.get_embeddings(batch)
-                    label = batch.id
-                    visualize_tsne(embedding,label ,perplexity=30, n_iter=1000, save_prefix='tsne_visualization.png')
-                # 将嵌入转为CPU并添加到列表中
-            except RuntimeError as e:
-                if "CUDA out of memory" not in str(e):
-                    print('\n forward error \n')
-                    raise (e)
-                else:
-                    print('OOM during embedding extraction')
-                torch.cuda.empty_cache()
-                continue
-    # 将所有批次的嵌入和标签连接起来
-    
-def visualize_tsne(embeddings_dict,label ,perplexity=30, n_iter=1000, save_prefix='tsne_visualization'):
-    """使用t-SNE可视化多个嵌入特征"""
-    
-    for feature_name, embedding_matrix in embeddings_dict.items():
-        print(f"Performing t-SNE on '{feature_name}' with {embedding_matrix.shape[0]} samples and dimension {embedding_matrix.shape[1]}...")
-        
-        # 执行t-SNE降维
-        tsne = TSNE(n_components=2, perplexity=perplexity, n_iter=n_iter, random_state=42)
-        tsne_results = tsne.fit_transform(embedding_matrix.cpu())
-        
-        # 创建DataFrame用于可视化
-        df = pd.DataFrame({
-            'x': tsne_results[:, 0], 
-            'y': tsne_results[:, 1],
-            'label': [feature_name] * embedding_matrix.shape[0]
-        })
-        
-         # 使用 JointGrid 绘制散点图与边缘分布曲线
-        g = sns.JointGrid(data=df, x='x', y='y', space=0, height=12)
-        g.plot_joint(sns.scatterplot, color='b', alpha=0.7, s=50)
-        g.plot_marginals(sns.kdeplot, fill=True, alpha=0.5)
-        
-        # 设置标题与坐标轴标签
-        g.ax_joint.set_xlabel('t-SNE dimension 1')
-        g.ax_joint.set_ylabel('t-SNE dimension 2')
-        g.figure.suptitle(f't-SNE Visualization of {feature_name}', y=1.02)
-        
-        # 保存并展示
-        save_path = f"{save_prefix}_{label}_{feature_name}.png"
-        g.figure.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-        print(f"t-SNE visualization for '{feature_name}' with marginal distributions saved to {save_path}")
-
-
 def main():
     ### Args
     parser = argparse.ArgumentParser()
@@ -257,59 +198,7 @@ def main():
                    euler_noise=args.euler_noise, level=args.level)
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_decay_step_size, gamma=args.lr_decay_factor)
-    if args.test_visualization:
-        # 将氨基酸类型的单字母代码映射为数字
-        amino_acid_to_number = {
-            'A': 0, 'C': 1, 'D': 2, 'E': 3, 'F': 4, 'G': 5,
-            'H': 6, 'I': 7, 'K': 8, 'L': 9, 'M': 10, 'N': 11,
-            'P': 12, 'Q': 13, 'R': 14, 'S': 15, 'T': 16, 'V': 17,
-            'W': 18, 'Y': 19
-        }
-        number_to_amino_acid = {num: aa for aa, num in amino_acid_to_number.items()}
-        # 3. 定义转换函数
-        def tensor_to_sequence(t: torch.Tensor) -> str:
-            """
-            将一个包含 [0-19] 的 1D Tensor 转成对应的氨基酸长字符串。
-            """
-            # 如果在 GPU 上，先移到 CPU；再转成 Python list
-            nums = t.cpu().tolist()
-            # 每个数字映射到一个字符，然后 join
-            return ''.join(number_to_amino_acid[n] for n in nums)
-        print('Extracting embeddings for visualization...')
-        visualize_path = args.visualize_path
-        checkpoint = torch.load(visualize_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-
-        model.eval()
-        with open('sampled_1000_pairs_gaussian_uniform copy.txt', 'r') as f:
-            lines = f.readlines()
-
-        pbar = tqdm(test_loader_all, disable=args.disable_tqdm)
-        for step, batch in enumerate(pbar):
-            batch = batch.to(device)
-            # pred = model(batch)
-            try:    
-                pred = model(batch)
-            except RuntimeError as e:
-                if "CUDA out of memory" not in str(e):
-                    print('\n forward error \n')
-                    raise (e)
-                else:
-                    print('evaluation OOM')
-                torch.cuda.empty_cache()
-                continue   
-            function = batch.y.long()
-            S_pred = torch.argmax(pred, dim=1)
-            seq1 = tensor_to_sequence(function)
-            seq2 = tensor_to_sequence(S_pred)
-            with open('SurfNet_results', 'a') as f_out:
-                f_out.write(f"{batch.id}\t"
-                            f"{seq1}\t"
-                            f"{seq2}\n")
-        return    
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_decay_step_size, gamma=args.lr_decay_factor)   
     if args.continue_training:
         save_dir = args.save_dir
         checkpoint = torch.load(save_dir + '/best_val.pt')
@@ -345,7 +234,12 @@ def main():
     test_loss_list_short=[]
     test_perplexity_list_short=[]
     test_recovery_list_short=[]
-
+    
+    best_val_perplexity = float('inf') 
+    best_test_recovery_all_record = 0.0
+    best_test_recovery_single_record = 0.0
+    best_test_recovery_short_record = 0.0
+    
     for epoch in range(start_epoch, args.epochs + 1):
         print('==== Epoch {} ===='.format(epoch))
         t_start = time.perf_counter()
@@ -375,13 +269,20 @@ def main():
         print('Test: Loss:{:.6f} Perplexity:{:.4f} Recovery:{:.4f}'.format(test_loss_all, test_perplexity_all, test_recovery_all))
         if not save_dir == "" and not os.path.exists(save_dir):
             os.makedirs(save_dir)
-
-        if not save_dir == "" and val_perplexity < best_val_perplexity:
-            print('Saving best val checkpoint ...')
-            checkpoint = {'epoch': epoch, 'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'scheduler_state_dict': scheduler.state_dict()}
-            # checkpoint = {'visualization Test'}
-            torch.save(checkpoint, save_dir + '/best_val.pt')
+        if val_perplexity < best_val_perplexity:
+            print('Validation perplexity improved from {:.4f} to {:.4f}'.format(best_val_perplexity, val_perplexity))
             best_val_perplexity = val_perplexity
+            
+            # 关键步骤：记录当前 Epoch 的测试集成绩
+            best_test_recovery_all_record = test_recovery_all
+            best_test_recovery_single_record = test_recovery_single
+            best_test_recovery_short_record = test_recovery_short
+            
+            if not save_dir == "":
+                print('Saving best val checkpoint ...')
+                checkpoint = {'epoch': epoch, 'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'scheduler_state_dict': scheduler.state_dict()}
+                torch.save(checkpoint, save_dir + '/best_val.pt')
+                
         t_end = time.perf_counter()
         print('Train: Loss:{:.6f} Perplexity:{:.4f}, Validation: Loss:{:.6f} Perplexity:{:.4f},' \
         'Test all Loss:{:.6f},Test all Perplexity :{:.4f},Test all Recovery:{:.4f},' \
@@ -401,9 +302,13 @@ def main():
         test_perplexity_list_all,
         test_recovery_list_all
     )
-    print("all:{:.6f}".format(max(test_recovery_list_all)))
-    print("single_chain:{:.6f}".format(max(test_recovery_list_single_chain)))
-    print("short:{:.6f}".format(max(test_recovery_list_short)))
+    print("-" * 30)
+    print("Final Results (Selected by Best Validation Perplexity):")
+    print("Best Val Perplexity: {:.4f}".format(best_val_perplexity))
+    print("Test all Recovery (at best val): {:.6f}".format(best_test_recovery_all_record))
+    print("Test single_chain Recovery (at best val): {:.6f}".format(best_test_recovery_single_record))
+    print("Test short Recovery (at best val): {:.6f}".format(best_test_recovery_short_record))
+    print("-" * 30)
     #writer.close()
     # Save last model
     checkpoint = {'epoch': epoch, 'model_state_dict': model.state_dict(),
